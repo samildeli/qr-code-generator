@@ -30,6 +30,22 @@ export default function App() {
   );
 }
 
+function Message() {
+  const snap = useSnapshot(state, { sync: true });
+
+  return (
+    <div className="flex flex-col items-start">
+      <div className="font-medium">Message</div>
+      <textarea
+        className="h-[150px] w-full resize-none border border-gray-500 p-2 focus:outline-none"
+        value={snap.data}
+        onChange={(event) => (state.data = event.target.value)}
+        spellCheck={false}
+      />
+    </div>
+  );
+}
+
 function Versions() {
   const snap = useSnapshot(state);
 
@@ -72,22 +88,6 @@ function ErrorCorrectionLevels() {
           </label>
         ))}
       </div>
-    </div>
-  );
-}
-
-function Message() {
-  const snap = useSnapshot(state, { sync: true });
-
-  return (
-    <div className="flex flex-col items-start">
-      <div className="font-medium">Message</div>
-      <textarea
-        className="h-[150px] w-full resize-none border border-gray-500 p-2 focus:outline-none"
-        value={snap.data}
-        onChange={(event) => (state.data = event.target.value)}
-        spellCheck={false}
-      />
     </div>
   );
 }
