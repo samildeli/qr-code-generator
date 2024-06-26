@@ -36,12 +36,9 @@ export class QrCodeGenerator {
     this.placeFinderPatterns();
     this.placeAlignmentPatterns();
     this.placeTimingPatterns();
-    if (this.version >= 7) {
-      this.placeVersionInformation(QrCodeGenerator.VERSION_INFORMATION[this.version - 7]);
-    }
+    this.placeVersionInformation();
     this.placeCodewords(codewords);
-    const formatDataBits = ["01", "00", "11", "10"][this.ecLevel] + this.applyDataMask().toString(2).padStart(3, "0");
-    this.placeFormatInformation(QrCodeGenerator.FORMAT_INFORMATION[parseInt(formatDataBits, 2)]);
+    this.applyDataMask();
   }
 
   createCodewords() {
@@ -226,8 +223,8 @@ export class QrCodeGenerator {
   placeCodewords(codewords: number[]) {
     const bits = codewords.map((byte) => byte.toString(2).padStart(8, "0")).join("");
 
-    // Reserve format information modules.
-    this.placeFormatInformation("0".repeat(15));
+    // Reserve the format information modules.
+    this.placeFormatInformation(0);
 
     let i = 0;
     let step = 0;
@@ -263,44 +260,48 @@ export class QrCodeGenerator {
 
   applyDataMask() {
     let minScore = Number.MAX_VALUE;
-    let minIndex = 0;
     let minQrCode: QrCode = [];
 
     for (let i = 0; i < 8; i++) {
+      // Save the unmasked symbol.
       const qrCode = this.qrCode.map((row) => row.map((module) => ({ ...module })));
+      // Place the format information for the data mask we are applying.
+      this.placeFormatInformation(i);
 
-      for (let y = 0; y < qrCode.length; y++) {
-        for (let x = 0; x < qrCode.length; x++) {
-          if (qrCode[y][x].isCodeword && QrCodeGenerator.DATA_MASKS[i](x, y)) {
-            qrCode[y][x].value = !qrCode[y][x].value;
+      // Apply the data mask.
+      for (let y = 0; y < this.qrCode.length; y++) {
+        for (let x = 0; x < this.qrCode.length; x++) {
+          if (this.qrCode[y][x].isCodeword && QrCodeGenerator.DATA_MASKS[i](x, y)) {
+            this.qrCode[y][x].value = !this.qrCode[y][x].value;
           }
         }
       }
 
-      const score = this.scoreDataMask(qrCode);
+      const score = this.scoreDataMask();
       if (score < minScore) {
         minScore = score;
-        minIndex = i;
-        minQrCode = qrCode;
+        minQrCode = this.qrCode;
       }
+
+      // Restore the symbol.
+      this.qrCode = qrCode;
     }
 
     this.qrCode = minQrCode;
-    return minIndex;
   }
 
-  scoreDataMask(qrCode: QrCode) {
+  scoreDataMask() {
     let score = 0;
 
     let adjacent = 1;
     const scoreAdjacent = (x: number, y: number, row: boolean) => {
-      const adjacentModule = row ? qrCode[y][x + 1] : qrCode[y + 1][x];
-      const isLastModule = row ? x === qrCode.length - 2 : y === qrCode.length - 2;
+      const adjacentModule = row ? this.qrCode[y][x + 1] : this.qrCode[y + 1][x];
+      const isLastModule = row ? x === this.qrCode.length - 2 : y === this.qrCode.length - 2;
 
-      if (qrCode[y][x].value === adjacentModule.value) {
+      if (this.qrCode[y][x].value === adjacentModule.value) {
         adjacent++;
       }
-      if (qrCode[y][x].value !== adjacentModule.value || isLastModule) {
+      if (this.qrCode[y][x].value !== adjacentModule.value || isLastModule) {
         if (adjacent >= 5) {
           score += 3 + adjacent - 5;
         }
@@ -309,27 +310,27 @@ export class QrCodeGenerator {
     };
 
     // Adjacent modules in rows
-    for (let y = 0; y < qrCode.length; y++) {
-      for (let x = 0; x < qrCode.length - 1; x++) {
+    for (let y = 0; y < this.qrCode.length; y++) {
+      for (let x = 0; x < this.qrCode.length - 1; x++) {
         scoreAdjacent(x, y, true);
       }
     }
 
     // Adjacent modules in columns
-    for (let x = 0; x < qrCode.length; x++) {
-      for (let y = 0; y < qrCode.length - 1; y++) {
+    for (let x = 0; x < this.qrCode.length; x++) {
+      for (let y = 0; y < this.qrCode.length - 1; y++) {
         scoreAdjacent(x, y, false);
       }
     }
 
     // 2x2 modules
-    for (let y = 0; y < qrCode.length - 1; y++) {
-      for (let x = 0; x < qrCode.length - 1; x++) {
-        const value = qrCode[y][x].value;
+    for (let y = 0; y < this.qrCode.length - 1; y++) {
+      for (let x = 0; x < this.qrCode.length - 1; x++) {
+        const value = this.qrCode[y][x].value;
         if (
-          qrCode[y + 1][x].value === value &&
-          qrCode[y][x + 1].value === value &&
-          qrCode[y + 1][x + 1].value === value
+          this.qrCode[y + 1][x].value === value &&
+          this.qrCode[y][x + 1].value === value &&
+          this.qrCode[y + 1][x + 1].value === value
         ) {
           score += 3;
         }
@@ -340,11 +341,11 @@ export class QrCodeGenerator {
       [false, false, false, false, true, false, true, true, true, false, true],
       [true, false, true, true, true, false, true, false, false, false, false],
     ];
-    function score11311(x: number, y: number, row: boolean) {
+    const score11311 = (x: number, y: number, row: boolean) => {
       for (const pattern of patterns) {
         let matches = true;
         for (let i = 0; i < pattern.length; i++) {
-          const value = row ? qrCode[y][x + i].value : qrCode[y + i][x].value;
+          const value = row ? this.qrCode[y][x + i].value : this.qrCode[y + i][x].value;
           if (value !== pattern[i]) {
             matches = false;
             break;
@@ -354,39 +355,42 @@ export class QrCodeGenerator {
           score += 40;
         }
       }
-    }
+    };
 
     // 1:1:3:1:1 pattern in rows
-    for (let y = 0; y < qrCode.length; y++) {
-      for (let x = 0; x < qrCode.length - 10; x++) {
+    for (let y = 0; y < this.qrCode.length; y++) {
+      for (let x = 0; x < this.qrCode.length - 10; x++) {
         score11311(x, y, true);
       }
     }
 
     // 1:1:3:1:1 pattern in columns
-    for (let x = 0; x < qrCode.length; x++) {
-      for (let y = 0; y < qrCode.length - 10; y++) {
+    for (let x = 0; x < this.qrCode.length; x++) {
+      for (let y = 0; y < this.qrCode.length - 10; y++) {
         score11311(x, y, false);
       }
     }
 
     // Proportion of modules
     let count = 0;
-    for (let y = 0; y < qrCode.length; y++) {
-      for (let x = 0; x < qrCode.length; x++) {
-        if (qrCode[y][x].value) {
+    for (let y = 0; y < this.qrCode.length; y++) {
+      for (let x = 0; x < this.qrCode.length; x++) {
+        if (this.qrCode[y][x].value) {
           count++;
         }
       }
     }
 
-    const proportion = count / qrCode.length ** 2;
+    const proportion = count / this.qrCode.length ** 2;
     score += 10 * Math.floor(Math.abs(proportion - 0.5) / 0.05);
 
     return score;
   }
 
-  placeFormatInformation(bits: string) {
+  placeFormatInformation(dataMaskIndex: number) {
+    const dataBits = ["01", "00", "11", "10"][this.ecLevel] + dataMaskIndex.toString(2).padStart(3, "0");
+    const bits = QrCodeGenerator.FORMAT_INFORMATION[parseInt(dataBits, 2)];
+
     for (let i = 0; i < 8; i++) {
       // Bits 14 to 7
       this.qrCode[8][i >= 6 ? i + 1 : i] = new Module(bits[i] === "1", false);
@@ -400,7 +404,13 @@ export class QrCodeGenerator {
     this.qrCode[this.qrCode.length - 8][8] = new Module(true, false);
   }
 
-  placeVersionInformation(bits: string) {
+  placeVersionInformation() {
+    if (this.version < 7) {
+      return;
+    }
+
+    const bits = QrCodeGenerator.VERSION_INFORMATION[this.version - 7];
+
     for (let i = 0; i < 18; i++) {
       this.qrCode[this.qrCode.length - 9 - (i % 3)][5 - Math.floor(i / 3)] = new Module(bits[i] === "1", false);
       this.qrCode[5 - Math.floor(i / 3)][this.qrCode.length - 9 - (i % 3)] = new Module(bits[i] === "1", false);
